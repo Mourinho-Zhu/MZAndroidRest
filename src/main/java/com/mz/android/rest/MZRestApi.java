@@ -171,7 +171,7 @@ public abstract class MZRestApi<SERVICE> {
      */
     protected <T, R> void startRestAsync(final Flowable<T> call, final Function<T, Publisher<MZRestResult<R>>> checkResultFunction, final MZRestICallback<R> callback) {
         if (null != call && null != checkResultFunction && null != callback) {
-            call.subscribeOn(Schedulers.newThread()).unsubscribeOn(Schedulers.newThread())
+            call.subscribeOn(Schedulers.io()).unsubscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread()).subscribe(new org.reactivestreams.Subscriber<T>() {
                 @Override
                 public void onSubscribe(org.reactivestreams.Subscription s) {
@@ -181,7 +181,7 @@ public abstract class MZRestApi<SERVICE> {
                 @Override
                 public void onNext(final T t) {
                     Flowable<T> data = Flowable.just(t);
-                    data.subscribeOn(Schedulers.newThread())
+                    data.subscribeOn(Schedulers.io())
                             .observeOn(AndroidSchedulers.mainThread()).flatMap(checkResultFunction).subscribe(new Consumer<MZRestResult<R>>() {
                         @Override
                         public void accept(MZRestResult<R> result) throws Exception {
