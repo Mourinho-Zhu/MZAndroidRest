@@ -9,10 +9,15 @@ import com.mz.android.util.log.MZLog;
 import com.mz.android.util.network.MZNetwork;
 
 import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
 import java.security.cert.CertificateException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Observable;
 import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.HostnameVerifier;
@@ -168,59 +173,170 @@ public abstract class MZRestApi<SERVICE> {
      * @param call                请求体
      * @param checkResultFunction 比较返回码的function
      * @param callback            应用层回调
+     * @return Subscriber 订阅者
      */
-    protected <T, R> void startRestAsync(final Flowable<T> call, final Function<T, Publisher<MZRestResult<R>>> checkResultFunction, final MZRestICallback<R> callback) {
+    protected <T, R> Subscriber startRestAsync(final Flowable<T> call, final Function<T, Publisher<MZRestResult<R>>> checkResultFunction, final MZRestICallback<R> callback) {
+        Subscriber subscriber = new Subscriber<T>() {
+            @Override
+            public void onSubscribe(Subscription s) {
+                s.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(final T t) {
+                Flowable<T> data = Flowable.just(t);
+                data.subscribeOn(Schedulers.io())
+                        .flatMap(checkResultFunction)
+                        .observeOn(Schedulers.io())
+                        .doOnNext(new Consumer<MZRestResult<R>>() {
+                            @Override
+                            public void accept(MZRestResult<R> result) throws Exception {
+                                MZLog.d(TAG, "doOnNext");
+                                if (null != result && result.isSuccess()) {
+                                    callback.onRestSuccessIO(result.getData());
+                                }
+                            }
+                        })
+                        .observeOn(AndroidSchedulers.mainThread())
+                        .subscribe(new Consumer<MZRestResult<R>>() {
+                            @Override
+                            public void accept(MZRestResult<R> result) throws Exception {
+                                if (null != result && result.isSuccess()) {
+                                    MZLog.d(TAG, "parse success");
+                                    callback.onRestSuccessUI(result.getData());
+                                } else {
+                                    MZLog.d(TAG, "parse success but code is fail");
+                                    callback.onRestFail(result.getCode(), result.getMessage());
+                                }
+                            }
+                        }, new Consumer<Throwable>() {
+                            @Override
+                            public void accept(Throwable t) throws Exception {
+                                t.printStackTrace();
+                                MZLog.e(TAG, "parse error ");
+                                callback.onRestError(MZRestStatusCode.ERROR_PARSE_RESPONSE);
+                            }
+                        });
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                MZLog.m(TAG);
+                handlerHttpError(t, callback);
+            }
+
+            @Override
+            public void onComplete() {
+                //不处理
+            }
+        };
         if (null != call && null != checkResultFunction && null != callback) {
             call.subscribeOn(Schedulers.io()).unsubscribeOn(Schedulers.io())
-                    .observeOn(AndroidSchedulers.mainThread()).subscribe(new org.reactivestreams.Subscriber<T>() {
-                @Override
-                public void onSubscribe(org.reactivestreams.Subscription s) {
-                    s.request(Long.MAX_VALUE);
-                }
-
-                @Override
-                public void onNext(final T t) {
-                    Flowable<T> data = Flowable.just(t);
-                    data.subscribeOn(Schedulers.io())
-                            .observeOn(AndroidSchedulers.mainThread()).flatMap(checkResultFunction).subscribe(new Consumer<MZRestResult<R>>() {
-                        @Override
-                        public void accept(MZRestResult<R> result) throws Exception {
-                            if (null != result && result.isSuccess()) {
-                                MZLog.d(TAG, "parse success");
-                                callback.onRestSuccess(result.getData());
-                            } else {
-                                MZLog.d(TAG, "parse success but code is fail");
-                                callback.onRestFail(result.getCode(), result.getMessage());
-                            }
-                        }
-                    }, new Consumer<Throwable>() {
-                        @Override
-                        public void accept(Throwable t) throws Exception {
-                            t.printStackTrace();
-                            MZLog.e(TAG, "parse error ");
-                            callback.onRestError(MZRestStatusCode.ERROR_PARSE_RESPONSE);
-                        }
-                    });
-                }
-
-                @Override
-                public void onError(Throwable t) {
-                    MZLog.m(TAG);
-                    handlerHttpError(t, callback);
-                }
-
-                @Override
-                public void onComplete() {
-                    //不处理
-                }
-            });
+                    .observeOn(AndroidSchedulers.mainThread()).subscribe(subscriber);
         } else {
             MZLog.e(TAG, "param is null,please check");
         }
+        return subscriber;
     }
 
+    /**
+     * 开始批量异步http请求
+     *
+     * @param calls                请求体集合
+     * @param checkResultFunction 比较返回码的function
+     * @param callback            应用层回调
+     * @return Subscriber 订阅者
+     */
+    protected <T, R> Subscriber startRestBatchAsync(final List<Flowable<T>> calls, final Function<T, Publisher<MZRestResult<R>>> checkResultFunction
+            , final MZRestBatchICallback<R> callback) {
+        Subscriber subscriber = new Subscriber<T>() {
+            List<R> resultList = new ArrayList<R>();
+            List<MZRestResult<R>> errorList = new ArrayList<MZRestResult<R>>();
+
+            @Override
+            public void onSubscribe(Subscription s) {
+                s.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(final T t) {
+                Flowable<T> data = Flowable.just(t);
+                data.subscribeOn(Schedulers.io())
+                        .flatMap(checkResultFunction)
+                        .observeOn(Schedulers.io())
+                        .subscribe(new Consumer<MZRestResult<R>>() {
+                            @Override
+                            public void accept(MZRestResult<R> result) throws Exception {
+                                if (null != result && result.isSuccess()) {
+                                    MZLog.d(TAG, "parse success");
+                                    resultList.add(result.getData());
+                                } else {
+                                    errorList.add(result);
+                                }
+                            }
+                        }, new Consumer<Throwable>() {
+                            @Override
+                            public void accept(Throwable t) throws Exception {
+                                t.printStackTrace();
+                                MZLog.e(TAG, "parse error ");
+                                callback.onRestError(MZRestStatusCode.ERROR_PARSE_RESPONSE);
+                            }
+                        });
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                if(!resultList.isEmpty()) {
+                    onComplete();
+                } else {
+                    MZLog.m(TAG);
+                    handlerHttpError(t, callback);
+                }
+            }
+
+            @Override
+            public void onComplete() {
+                Flowable<MZRestBatchICallback<R>> data = Flowable.just(callback);
+                data.subscribeOn(Schedulers.io())
+                        .observeOn(Schedulers.io())
+                        .doOnNext(new Consumer<MZRestBatchICallback<R>>() {
+                            @Override
+                            public void accept(MZRestBatchICallback<R> callback) throws Exception {
+                                MZLog.d(TAG, "doOnNext");
+                                if (!resultList.isEmpty()) {
+                                    MZLog.d(TAG, "parse success resultList size --> " + resultList.size());
+                                    callback.onRestSuccessIO(resultList);
+                                }
+                            }
+                        })
+                        .observeOn(AndroidSchedulers.mainThread())
+                        .subscribe(new Consumer<MZRestBatchICallback<R>>() {
+                            @Override
+                            public void accept(MZRestBatchICallback<R> callback) throws Exception {
+                                if (!resultList.isEmpty()) {
+                                    MZLog.d(TAG, "parse success resultList size --> " + resultList.size());
+                                    callback.onRestSuccessUI(resultList);
+                                } else {
+                                    MZLog.d(TAG, "parse success but code is fail");
+                                    callback.onRestFail(errorList);
+                                }
+                            }
+                        });
+            }
+        };
+
+        if (null != calls && null != checkResultFunction && null != callback) {
+            Flowable.merge(calls).mergeDelayError(calls).subscribeOn(Schedulers.io()).unsubscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread()).subscribe(subscriber);
+        } else {
+            MZLog.e(TAG, "param is null,please check");
+        }
+        return subscriber;
+    }
+
+
     //处理http请求失败事件
-    private void handlerHttpError(Throwable t, MZRestICallback callback) {
+    private void handlerHttpError(Throwable t, MZRestICallbackBase callback) {
         if (!MZNetwork.isNetworkAvailable(mContext)) {
             MZLog.w(TAG, "network is not available");
             callback.onRestError(MZRestStatusCode.ERROR_NETWORK_UNAVAILABLE);
