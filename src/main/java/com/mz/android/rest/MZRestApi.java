@@ -119,6 +119,7 @@ public abstract class MZRestApi<SERVICE> {
                     Request newRequest = chain.request().newBuilder()
                             .addHeader("User-Agent", "Retrofit-Sample-App")
                             .build();
+                    MZLog.d(TAG,"request --> " + newRequest.url());
                     return chain.proceed(newRequest);
                 }
             };
