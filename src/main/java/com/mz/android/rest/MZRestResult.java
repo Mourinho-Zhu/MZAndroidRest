@@ -22,15 +22,15 @@ public class MZRestResult<R> {
         this.data = data;
     }
 
-    boolean isSuccess() {
+    public boolean isSuccess() {
         return success;
     }
 
-    int getCode() {
+    public int getCode() {
         return code;
     }
 
-    String getMessage() {
+    public String getMessage() {
         return message;
     }
 

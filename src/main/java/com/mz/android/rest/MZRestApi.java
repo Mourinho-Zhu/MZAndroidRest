@@ -3,6 +3,7 @@ package com.mz.android.rest;
 import android.content.Context;
 import android.text.TextUtils;
 
+import com.jakewharton.retrofit2.adapter.rxjava2.HttpException;
 import com.jakewharton.retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory;
 import com.mz.android.rest.convert.MZRestGsonConverterFactory;
 import com.mz.android.util.log.MZLog;
@@ -119,7 +120,7 @@ public abstract class MZRestApi<SERVICE> {
                     Request newRequest = chain.request().newBuilder()
                             .addHeader("User-Agent", "Retrofit-Sample-App")
                             .build();
-                    MZLog.d(TAG,"request --> " + newRequest.url());
+                    MZLog.d(TAG, "request --> " + newRequest.url());
                     return chain.proceed(newRequest);
                 }
             };
@@ -177,7 +178,7 @@ public abstract class MZRestApi<SERVICE> {
      * @return Subscriber 订阅者
      */
     protected <T, R> Subscriber startRestAsync(final Flowable<T> call, final Function<T, Publisher<MZRestResult<R>>> checkResultFunction, final MZRestICallback<R> callback) {
-        Subscriber subscriber = new Subscriber<T>() {
+        final Subscriber subscriber = new Subscriber<T>() {
             @Override
             public void onSubscribe(Subscription s) {
                 s.request(Long.MAX_VALUE);
@@ -243,7 +244,7 @@ public abstract class MZRestApi<SERVICE> {
     /**
      * 开始批量异步http请求
      *
-     * @param calls                请求体集合
+     * @param calls               请求体集合
      * @param checkResultFunction 比较返回码的function
      * @param callback            应用层回调
      * @return Subscriber 订阅者
@@ -272,6 +273,7 @@ public abstract class MZRestApi<SERVICE> {
                                     MZLog.d(TAG, "parse success");
                                     resultList.add(result.getData());
                                 } else {
+                                    MZLog.d(TAG, "parse ok but result is error --> " + result);
                                     errorList.add(result);
                                 }
                             }
@@ -287,7 +289,9 @@ public abstract class MZRestApi<SERVICE> {
 
             @Override
             public void onError(Throwable t) {
-                if(!resultList.isEmpty()) {
+                MZLog.d(TAG, "onError resultList size --> " + resultList.size());
+                MZLog.d(TAG, "onError errorList size --> " + errorList.size());
+                if (!resultList.isEmpty()) {
                     onComplete();
                 } else {
                     MZLog.m(TAG);
@@ -343,8 +347,20 @@ public abstract class MZRestApi<SERVICE> {
             callback.onRestError(MZRestStatusCode.ERROR_NETWORK_UNAVAILABLE);
         } else if (t instanceof SocketTimeoutException) {
             callback.onRestError(MZRestStatusCode.ERROR_REQUEST_TIMEOUT);
+        } else if (t instanceof HttpException) {
+            HttpException httpException = (HttpException) t;
+            httpException.printStackTrace();
+            try {
+                MZLog.e(TAG, "httpException response --> " + httpException.response().errorBody().string());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            callback.onRestError(httpException.code());
         } else {
             callback.onRestError(MZRestStatusCode.ERROR_NETWORK);
+        }
+        if (null != t) {
+            t.printStackTrace();
         }
     }
 
