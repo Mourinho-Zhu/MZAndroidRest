@@ -2,12 +2,11 @@ package com.mz.android.rest;
 
 import android.content.Context;
 import android.text.TextUtils;
+import android.util.Log;
 
 import com.jakewharton.retrofit2.adapter.rxjava2.HttpException;
 import com.jakewharton.retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory;
 import com.mz.android.rest.convert.MZRestGsonConverterFactory;
-import com.mz.android.util.log.MZLog;
-import com.mz.android.util.network.MZNetwork;
 
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
@@ -18,7 +17,6 @@ import java.net.SocketTimeoutException;
 import java.security.cert.CertificateException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Observable;
 import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.HostnameVerifier;
@@ -120,7 +118,9 @@ public abstract class MZRestApi<SERVICE> {
                     Request newRequest = chain.request().newBuilder()
                             .addHeader("User-Agent", "Retrofit-Sample-App")
                             .build();
-                    MZLog.d(TAG, "request --> " + newRequest.url());
+                    Log.d(TAG, "request --> " + newRequest.url());
+                    Log.d(TAG, "body --> " + newRequest.body());
+                    Log.d(TAG, "headers --> " + newRequest.headers());
                     return chain.proceed(newRequest);
                 }
             };
@@ -130,7 +130,7 @@ public abstract class MZRestApi<SERVICE> {
                         @Override
                         public boolean verify(String hostname,
                                               SSLSession session) {
-                            MZLog.d(TAG,
+                            Log.d(TAG,
                                     "getProtocol --> " + session.getProtocol());
                             return true;
                         }
@@ -141,7 +141,7 @@ public abstract class MZRestApi<SERVICE> {
                     .sslSocketFactory(sslSocketFactory).build();
             return okHttpClient;
         } catch (Exception e) {
-            MZLog.e(TAG, "getUnsafeOkHttpClient error!");
+            Log.e(TAG, "getUnsafeOkHttpClient error!");
             throw new RuntimeException(e);
         }
     }
@@ -151,9 +151,9 @@ public abstract class MZRestApi<SERVICE> {
      */
     protected void init() {
         if (TextUtils.isEmpty(mBaseUrl)) {
-            MZLog.e(TAG, "createService error empty base url");
+            Log.e(TAG, "createService error empty base url");
         } else if (null == mServiceClass) {
-            MZLog.e(TAG, "createService error empty service class");
+            Log.e(TAG, "createService error empty service class");
         } else {
             try {
                 OkHttpClient client = getUnsafeOkHttpClient();
@@ -164,7 +164,7 @@ public abstract class MZRestApi<SERVICE> {
                 mService = retrofit.create(mServiceClass);
             } catch (Exception e) {
                 e.printStackTrace();
-                MZLog.e(TAG, "createService error class -> " + mServiceClass);
+                Log.e(TAG, "createService error class -> " + mServiceClass);
             }
         }
     }
@@ -179,6 +179,8 @@ public abstract class MZRestApi<SERVICE> {
      */
     protected <T, R> Subscriber startRestAsync(final Flowable<T> call, final Function<T, Publisher<MZRestResult<R>>> checkResultFunction, final MZRestICallback<R> callback) {
         final Subscriber subscriber = new Subscriber<T>() {
+            boolean mHasContent = false;
+
             @Override
             public void onSubscribe(Subscription s) {
                 s.request(Long.MAX_VALUE);
@@ -186,6 +188,8 @@ public abstract class MZRestApi<SERVICE> {
 
             @Override
             public void onNext(final T t) {
+                Log.d(TAG, "onNext");
+                mHasContent = true;
                 Flowable<T> data = Flowable.just(t);
                 data.subscribeOn(Schedulers.io())
                         .flatMap(checkResultFunction)
@@ -193,7 +197,7 @@ public abstract class MZRestApi<SERVICE> {
                         .doOnNext(new Consumer<MZRestResult<R>>() {
                             @Override
                             public void accept(MZRestResult<R> result) throws Exception {
-                                MZLog.d(TAG, "doOnNext");
+                                Log.d(TAG, "doOnNext");
                                 if (null != result && result.isSuccess()) {
                                     callback.onRestSuccessIO(result.getData());
                                 }
@@ -204,10 +208,10 @@ public abstract class MZRestApi<SERVICE> {
                             @Override
                             public void accept(MZRestResult<R> result) throws Exception {
                                 if (null != result && result.isSuccess()) {
-                                    MZLog.d(TAG, "parse success");
+                                    Log.d(TAG, "parse success");
                                     callback.onRestSuccessUI(result.getData());
                                 } else {
-                                    MZLog.d(TAG, "parse success but code is fail");
+                                    Log.d(TAG, "parse success but code is fail");
                                     callback.onRestFail(result.getCode(), result.getMessage());
                                 }
                             }
@@ -215,7 +219,7 @@ public abstract class MZRestApi<SERVICE> {
                             @Override
                             public void accept(Throwable t) throws Exception {
                                 t.printStackTrace();
-                                MZLog.e(TAG, "parse error ");
+                                Log.e(TAG, "parse error ");
                                 callback.onRestError(MZRestStatusCode.ERROR_PARSE_RESPONSE);
                             }
                         });
@@ -223,20 +227,26 @@ public abstract class MZRestApi<SERVICE> {
 
             @Override
             public void onError(Throwable t) {
-                MZLog.m(TAG);
+                mHasContent = true;
+                Log.e(TAG, "onError");
                 handlerHttpError(t, callback);
             }
 
             @Override
             public void onComplete() {
+                Log.d(TAG, "onComplete mHasContent --> " + mHasContent);
                 //不处理
+                if (!mHasContent) {
+                    callback.onRestSuccessUI(null);
+                }
             }
+
         };
         if (null != call && null != checkResultFunction && null != callback) {
             call.subscribeOn(Schedulers.io()).unsubscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread()).subscribe(subscriber);
         } else {
-            MZLog.e(TAG, "param is null,please check");
+            Log.e(TAG, "param is null,please check");
         }
         return subscriber;
     }
@@ -270,10 +280,10 @@ public abstract class MZRestApi<SERVICE> {
                             @Override
                             public void accept(MZRestResult<R> result) throws Exception {
                                 if (null != result && result.isSuccess()) {
-                                    MZLog.d(TAG, "parse success");
+                                    Log.d(TAG, "parse success");
                                     resultList.add(result.getData());
                                 } else {
-                                    MZLog.d(TAG, "parse ok but result is error --> " + result);
+                                    Log.d(TAG, "parse ok but result is error --> " + result);
                                     errorList.add(result);
                                 }
                             }
@@ -281,7 +291,7 @@ public abstract class MZRestApi<SERVICE> {
                             @Override
                             public void accept(Throwable t) throws Exception {
                                 t.printStackTrace();
-                                MZLog.e(TAG, "parse error ");
+                                Log.e(TAG, "parse error ");
                                 callback.onRestError(MZRestStatusCode.ERROR_PARSE_RESPONSE);
                             }
                         });
@@ -289,12 +299,12 @@ public abstract class MZRestApi<SERVICE> {
 
             @Override
             public void onError(Throwable t) {
-                MZLog.d(TAG, "onError resultList size --> " + resultList.size());
-                MZLog.d(TAG, "onError errorList size --> " + errorList.size());
+                Log.d(TAG, "onError resultList size --> " + resultList.size());
+                Log.d(TAG, "onError errorList size --> " + errorList.size());
                 if (!resultList.isEmpty()) {
                     onComplete();
                 } else {
-                    MZLog.m(TAG);
+                    Log.w(TAG, "onError");
                     handlerHttpError(t, callback);
                 }
             }
@@ -307,9 +317,9 @@ public abstract class MZRestApi<SERVICE> {
                         .doOnNext(new Consumer<MZRestBatchICallback<R>>() {
                             @Override
                             public void accept(MZRestBatchICallback<R> callback) throws Exception {
-                                MZLog.d(TAG, "doOnNext");
+                                Log.d(TAG, "doOnNext");
                                 if (!resultList.isEmpty()) {
-                                    MZLog.d(TAG, "parse success resultList size --> " + resultList.size());
+                                    Log.d(TAG, "parse success resultList size --> " + resultList.size());
                                     callback.onRestSuccessIO(resultList);
                                 }
                             }
@@ -319,10 +329,10 @@ public abstract class MZRestApi<SERVICE> {
                             @Override
                             public void accept(MZRestBatchICallback<R> callback) throws Exception {
                                 if (!resultList.isEmpty()) {
-                                    MZLog.d(TAG, "parse success resultList size --> " + resultList.size());
+                                    Log.d(TAG, "parse success resultList size --> " + resultList.size());
                                     callback.onRestSuccessUI(resultList);
                                 } else {
-                                    MZLog.d(TAG, "parse success but code is fail");
+                                    Log.d(TAG, "parse success but code is fail");
                                     callback.onRestFail(errorList);
                                 }
                             }
@@ -334,7 +344,7 @@ public abstract class MZRestApi<SERVICE> {
             Flowable.merge(calls).mergeDelayError(calls).subscribeOn(Schedulers.io()).unsubscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread()).subscribe(subscriber);
         } else {
-            MZLog.e(TAG, "param is null,please check");
+            Log.e(TAG, "param is null,please check");
         }
         return subscriber;
     }
@@ -343,7 +353,7 @@ public abstract class MZRestApi<SERVICE> {
     //处理http请求失败事件
     private void handlerHttpError(Throwable t, MZRestICallbackBase callback) {
         if (!MZNetwork.isNetworkAvailable(mContext)) {
-            MZLog.w(TAG, "network is not available");
+            Log.w(TAG, "network is not available");
             callback.onRestError(MZRestStatusCode.ERROR_NETWORK_UNAVAILABLE);
         } else if (t instanceof SocketTimeoutException) {
             callback.onRestError(MZRestStatusCode.ERROR_REQUEST_TIMEOUT);
@@ -351,7 +361,7 @@ public abstract class MZRestApi<SERVICE> {
             HttpException httpException = (HttpException) t;
             httpException.printStackTrace();
             try {
-                MZLog.e(TAG, "httpException response --> " + httpException.response().errorBody().string());
+                Log.e(TAG, "httpException response --> " + httpException.response().errorBody().string());
             } catch (Exception e) {
                 e.printStackTrace();
             }

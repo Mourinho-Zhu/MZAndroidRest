@@ -15,7 +15,7 @@
  */
 package com.mz.android.rest.convert;
 
-import com.mz.android.util.log.MZLog;
+import android.util.Log;
 
 import org.simpleframework.xml.Serializer;
 
@@ -48,7 +48,7 @@ final class MZRestXmlResponseBodyConverter<T> implements
         T read = null;
         try {
             String xml = value.string();
-            MZLog.d(TAG, "response xml --> " + xml);
+            Log.d(TAG, "response xml --> " + xml);
             read = serializer.read(cls, xml, strict);
         } catch (Exception e) {
             throw new RuntimeException(e);

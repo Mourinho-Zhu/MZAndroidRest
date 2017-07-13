@@ -15,9 +15,10 @@
  */
 package com.mz.android.rest.convert;
 
+import android.util.Log;
+
 import com.google.gson.Gson;
 import com.google.gson.TypeAdapter;
-import com.mz.android.util.log.MZLog;
 
 import java.io.IOException;
 
@@ -42,12 +43,12 @@ public class MZRestGsonResponseBodyConverter<T> implements
     public T convert(ResponseBody value) throws IOException {
         try {
             String json = value.string();
-            MZLog.d(TAG, "response json --> " + json);
+            Log.d(TAG, "response json --> " + json);
             T object = null;
             try {
                 object = adapter.fromJson(json);
             } catch (Exception e) {
-                MZLog.e(TAG, "handle exception");
+                Log.e(TAG, "handle exception");
                 object = handleJsonSyntaxException(object, json);
             }
             return object;
@@ -61,7 +62,7 @@ public class MZRestGsonResponseBodyConverter<T> implements
         try {
             Gson gson = new Gson();
             json = gson.toJson(json);
-            MZLog.e(TAG, "new json --> " + json);
+            Log.e(TAG, "new json --> " + json);
             object = adapter.fromJson(json);
         } catch (Exception e) {
             e.printStackTrace();
