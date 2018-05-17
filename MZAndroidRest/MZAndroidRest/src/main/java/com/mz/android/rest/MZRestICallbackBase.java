@@ -11,5 +11,5 @@ interface MZRestICallbackBase<T>{
      *
      * @param code Rest错误码，参见MZRestStatusCode类
      */
-    void onRestError(int code);
+    void onRestError(MZRestStatusCode code);
 }

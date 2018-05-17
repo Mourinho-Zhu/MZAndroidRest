@@ -15,8 +15,6 @@
  */
 package com.mz.android.rest.convert;
 
-import android.util.Log;
-
 import org.simpleframework.xml.Serializer;
 
 import java.io.IOException;
@@ -55,7 +53,6 @@ final class MZRestXmlRequestBodyConverter<T> implements Converter<T, RequestBody
             serializer.write(value, osw);
             osw.flush();
             body = buffer.readByteString();
-            Log.d(TAG, "request json --> " + body.utf8());
         } catch (Exception e) {
             throw new RuntimeException(e);
         } finally {

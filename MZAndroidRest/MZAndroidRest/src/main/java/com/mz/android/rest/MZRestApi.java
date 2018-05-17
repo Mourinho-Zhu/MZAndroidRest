@@ -124,15 +124,11 @@ public abstract class MZRestApi<SERVICE> {
                     Request.Builder builder = chain.request().newBuilder();
                     Map<String, String> headerMap = getHeaders();
                     if (null != headerMap) {
-                        Log.d(TAG, "add  headerMap --> " + headerMap);
                         for (String key : headerMap.keySet()) {
                             builder.addHeader(key, headerMap.get(key));
                         }
                     }
                     Request newRequest = builder.build();
-                    Log.d(TAG, "request --> " + newRequest.url());
-                    Log.d(TAG, "body --> " + newRequest.body());
-                    Log.d(TAG, "headers --> " + newRequest.headers());
                     return chain.proceed(newRequest);
                 }
             };
@@ -140,7 +136,7 @@ public abstract class MZRestApi<SERVICE> {
                 @Override
                 public void log(String message) {
                     //打印retrofit日志
-                    Log.i("RetrofitLog", "retrofitBack = " + message);
+                    Log.d(TAG, message);
                 }
             });
             loggingInterceptor.setLevel(HttpLoggingInterceptor.Level.BODY);
@@ -150,8 +146,6 @@ public abstract class MZRestApi<SERVICE> {
                         @Override
                         public boolean verify(String hostname,
                                               SSLSession session) {
-                            Log.d(TAG,
-                                    "getProtocol --> " + session.getProtocol());
                             return true;
                         }
                     })
@@ -208,7 +202,6 @@ public abstract class MZRestApi<SERVICE> {
             Consumer<? super T> onNext = new Consumer<T>() {
                 @Override
                 public void accept(@NonNull T t) throws Exception {
-                    Log.d(TAG, "onNext");
                     mHasContent = true;
                     Flowable<T> data = Flowable.just(t);
                     data.subscribeOn(Schedulers.io())
@@ -217,7 +210,6 @@ public abstract class MZRestApi<SERVICE> {
                             .doOnNext(new Consumer<MZRestResult<R>>() {
                                 @Override
                                 public void accept(MZRestResult<R> result) throws Exception {
-                                    Log.d(TAG, "doOnNext");
                                     if (null != result && result.isSuccess()) {
                                         callback.onRestSuccessIO(result.getData());
                                     }
@@ -300,7 +292,6 @@ public abstract class MZRestApi<SERVICE> {
                     .doOnNext(new Consumer<MZRestResult<R>>() {
                         @Override
                         public void accept(MZRestResult<R> result) throws Exception {
-                            Log.d(TAG, "doOnNext");
                             if (null != result && result.isSuccess()) {
                                 callback.onRestSuccessIO(result.getData());
                             }
@@ -343,7 +334,6 @@ public abstract class MZRestApi<SERVICE> {
                     .doOnNext(new Consumer<MZRestResult<R>>() {
                         @Override
                         public void accept(MZRestResult<R> result) throws Exception {
-                            Log.d(TAG, "doOnNext");
                             if (null != result && result.isSuccess()) {
                                 callback.onRestSuccessIO(result.getData());
                             }
@@ -389,7 +379,6 @@ public abstract class MZRestApi<SERVICE> {
                     .doOnNext(new Consumer<MZRestResult<R>>() {
                         @Override
                         public void accept(MZRestResult<R> result) throws Exception {
-                            Log.d(TAG, "doOnNext");
                             if (null != result && result.isSuccess()) {
                                 callback.onRestSuccessIO(result.getData());
                             }
@@ -438,7 +427,6 @@ public abstract class MZRestApi<SERVICE> {
                     .doOnNext(new Consumer<MZRestResult<R>>() {
                         @Override
                         public void accept(MZRestResult<R> result) throws Exception {
-                            Log.d(TAG, "doOnNext");
                             if (null != result && result.isSuccess()) {
                                 callback.onRestSuccessIO(result.getData());
                             }
@@ -469,9 +457,9 @@ public abstract class MZRestApi<SERVICE> {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-            callback.onRestError(httpException.code());
-        } else {
             callback.onRestError(MZRestStatusCode.ERROR_NETWORK);
+        } else {
+            callback.onRestError(MZRestStatusCode.ERROR_OTHER);
         }
         if (null != t) {
             t.printStackTrace();

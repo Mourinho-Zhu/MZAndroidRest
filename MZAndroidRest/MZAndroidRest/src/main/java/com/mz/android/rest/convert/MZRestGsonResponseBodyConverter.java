@@ -43,7 +43,6 @@ public class MZRestGsonResponseBodyConverter<T> implements
     public T convert(ResponseBody value) throws IOException {
         try {
             String json = value.string();
-            Log.d(TAG, "response json --> " + json);
             T object = null;
             try {
                 object = adapter.fromJson(json);

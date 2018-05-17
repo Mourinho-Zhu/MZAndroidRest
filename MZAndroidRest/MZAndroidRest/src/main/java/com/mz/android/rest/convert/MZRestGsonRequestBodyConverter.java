@@ -15,8 +15,6 @@
  */
 package com.mz.android.rest.convert;
 
-import android.util.Log;
-
 import com.google.gson.Gson;
 import com.google.gson.TypeAdapter;
 import com.google.gson.stream.JsonWriter;
@@ -61,7 +59,6 @@ public class MZRestGsonRequestBodyConverter<T> implements
             adapter.write(jsonWriter, value);
             jsonWriter.close();
             body = buffer.readByteString();
-            Log.d(TAG, "request json --> " + body.utf8());
 
         } catch (Exception e) {
             e.printStackTrace();

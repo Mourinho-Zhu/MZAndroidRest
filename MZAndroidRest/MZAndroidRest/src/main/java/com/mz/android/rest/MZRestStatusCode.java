@@ -5,25 +5,35 @@ package com.mz.android.rest;
  *
  * @author Mourinho.Zhu on 16-11-24.
  */
-public class MZRestStatusCode {
+public enum MZRestStatusCode {
     /**
      * 网络不可用
      */
-    public static final int ERROR_NETWORK_UNAVAILABLE = 0x01;
-
+    ERROR_NETWORK_UNAVAILABLE,
 
     /**
      * 请求超时
      */
-    public static final int ERROR_REQUEST_TIMEOUT = 0x02;
+    ERROR_REQUEST_TIMEOUT,
 
     /**
      * 解析返回数据出错
      */
-    public static final int ERROR_PARSE_RESPONSE = 0x03;
+    ERROR_PARSE_RESPONSE,
 
     /**
      * 网络错误
      */
-    public static final int ERROR_NETWORK = 0x04;
+    ERROR_NETWORK,
+
+    /**
+     * token错误
+     */
+    ERROR_TOKEN,
+
+    /**
+     * 其他错误
+     */
+    ERROR_OTHER,
+
 }
