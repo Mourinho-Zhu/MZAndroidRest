@@ -15,6 +15,8 @@
  */
 package com.mz.android.rest.convert;
 
+import android.util.Log;
+
 import com.google.gson.Gson;
 import com.google.gson.TypeAdapter;
 import com.google.gson.stream.JsonWriter;

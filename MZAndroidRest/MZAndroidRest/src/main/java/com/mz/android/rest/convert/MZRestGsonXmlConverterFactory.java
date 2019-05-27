@@ -48,7 +48,7 @@ public final class MZRestGsonXmlConverterFactory extends Converter.Factory {
 
     /** Create an instance using {@code serializer} for conversion. */
     public static MZRestGsonXmlConverterFactory create(Gson gson,
-                                                       Serializer serializer) {
+            Serializer serializer) {
         return new MZRestGsonXmlConverterFactory(gson, serializer, true);
     }
 
@@ -62,7 +62,7 @@ public final class MZRestGsonXmlConverterFactory extends Converter.Factory {
 
     /** Create an instance using {@code serializer} for non-strict conversion. */
     public static MZRestGsonXmlConverterFactory createNonStrict(Gson gson,
-                                                                Serializer serializer) {
+            Serializer serializer) {
         return new MZRestGsonXmlConverterFactory(gson, serializer, false);
     }
 

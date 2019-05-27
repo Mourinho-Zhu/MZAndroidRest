@@ -15,6 +15,8 @@
  */
 package com.mz.android.rest.convert;
 
+import android.util.Log;
+
 import org.simpleframework.xml.Serializer;
 
 import java.io.IOException;
