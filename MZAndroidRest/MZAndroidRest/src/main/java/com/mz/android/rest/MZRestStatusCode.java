@@ -9,6 +9,10 @@ import android.text.TextUtils;
  */
 public enum MZRestStatusCode {
     /**
+     * 成功
+     */
+    SUCCESS("0",""),
+    /**
      * 网络不可用
      */
     ERROR_NETWORK_UNAVAILABLE("90001","网络不可用，请检查网络连接状态"),
