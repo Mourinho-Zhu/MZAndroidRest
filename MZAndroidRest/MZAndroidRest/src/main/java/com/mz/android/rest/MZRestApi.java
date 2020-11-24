@@ -1,6 +1,8 @@
 package com.mz.android.rest;
 
 import android.content.Context;
+import android.content.res.AssetManager;
+import android.os.Build;
 import android.text.TextUtils;
 
 import com.jakewharton.retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory;
@@ -11,11 +13,10 @@ import com.mz.android.rest.persistentcookiejar.ClearableCookieJar;
 import com.mz.android.rest.persistentcookiejar.PersistentCookieJar;
 import com.mz.android.rest.persistentcookiejar.cache.SetCookieCache;
 import com.mz.android.rest.persistentcookiejar.persistence.SharedPrefsCookiePersistor;
+import com.mz.android.rest.util.MZHttpUtils;
 
 import org.reactivestreams.Publisher;
 
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.KeyManagementException;
@@ -24,6 +25,7 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -40,15 +42,9 @@ import javax.net.ssl.X509TrustManager;
 import io.reactivex.Flowable;
 import io.reactivex.Observable;
 import io.reactivex.android.schedulers.AndroidSchedulers;
-import io.reactivex.annotations.NonNull;
 import io.reactivex.disposables.Disposable;
-import io.reactivex.functions.Action;
-import io.reactivex.functions.BiFunction;
 import io.reactivex.functions.Consumer;
 import io.reactivex.functions.Function;
-import io.reactivex.functions.Function3;
-import io.reactivex.functions.Function4;
-import io.reactivex.functions.Function5;
 import io.reactivex.schedulers.Schedulers;
 import okhttp3.Cookie;
 import okhttp3.HttpUrl;
@@ -94,10 +90,13 @@ public abstract class MZRestApi<SERVICE> {
     private Context mContext;
 
     //cookie jar
-    private ClearableCookieJar mCookieJar;
+    //private ClearableCookieJar mCookieJar;
 
     //cookie enable flag
     private boolean mIsCookieEnabled;
+
+    //是否要认证
+    protected boolean mIsSSL = false;
 
     /**
      * 构造函数
@@ -110,15 +109,15 @@ public abstract class MZRestApi<SERVICE> {
         mContext = context;
         mBaseUrl = baseUrl;
         mServiceClass = serviceClass;
-        mCookieJar = new PersistentCookieJar(new SetCookieCache(), new SharedPrefsCookiePersistor(context));
+        //mCookieJar = new PersistentCookieJar(new SetCookieCache(), new SharedPrefsCookiePersistor(context));
     }
 
     //获取ok http client
-    private OkHttpClient getOkHttpClient(final SSLContext sslContext) {
+    protected OkHttpClient getOkHttpClient(MZHttpUtils.SSLParams sslParams) {
         try {
             // Create an ssl socket factory with our all-trusting manager
-            final SSLSocketFactory sslSocketFactory = sslContext
-                    .getSocketFactory();
+            final SSLSocketFactory sslSocketFactory = sslParams.sSLSocketFactory;
+
             // Define the interceptor, add authentication headers
             Interceptor requestInterceptor = new Interceptor() {
                 @Override
@@ -132,7 +131,11 @@ public abstract class MZRestApi<SERVICE> {
                         }
                     }
                     Request newRequest = builder.build();
-                    return chain.proceed(newRequest);
+                    MZLog.d(TAG, "chain.proceed start");
+                    okhttp3.Response response = chain.proceed(newRequest);
+                    MZLog.d(TAG, "chain.proceed response");
+                    onResponse(response);
+                    return response;
                 }
             };
 
@@ -161,14 +164,27 @@ public abstract class MZRestApi<SERVICE> {
                     .connectTimeout(mHttpConnectTimeoutSecond,
                             TimeUnit.SECONDS)
                     .addInterceptor(requestInterceptor)
-                    .addInterceptor(loggingInterceptor)
-                    .sslSocketFactory(sslSocketFactory);
+                    .addInterceptor(loggingInterceptor);
+
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+                MZLog.d(TAG, "init default");
+                if (mIsSSL) {
+                    builder.sslSocketFactory(sslParams.sSLSocketFactory, sslParams.trustManager);
+                } else {
+                    builder.sslSocketFactory(sslSocketFactory);
+                }
+            } else {
+                //android 4.4以下
+                MZLog.d(TAG, "init android 4.4 with tls");
+                SSLSocketFactory socketFactory = new MZTls12SocketFactory(sslSocketFactory);
+                builder.sslSocketFactory(socketFactory);
+            }
 
             if (mIsCookieEnabled) {
                 MZLog.d(TAG, "cookie is enabled");
-                builder = builder.cookieJar(mCookieJar);
+                //builder = builder.cookieJar(mCookieJar);
             }
-
             return builder.build();
         } catch (Exception e) {
             MZLog.e(TAG, "getUnsafeOkHttpClient error!");
@@ -176,7 +192,41 @@ public abstract class MZRestApi<SERVICE> {
         }
     }
 
-    private SSLContext buildDefaultSSLContext() {
+    protected MZHttpUtils.SSLParams buildSSLParam(String clientBksPath, String caPassword, String caAlias,
+                                                String trustStoreBksPath, String bkPassword) {
+        InputStream kmInput = null;
+        InputStream caBksInput = null;
+        AssetManager assetManager = mContext.getAssets();
+        MZHttpUtils.SSLParams sslParams = null;
+        if (assetManager != null) {
+            try {
+                kmInput = assetManager.open(clientBksPath);
+                caBksInput = assetManager.open(trustStoreBksPath);
+                sslParams = MZHttpUtils.getSslSocketFactory(caBksInput, caPassword, caAlias, kmInput,
+                        bkPassword);
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                try {
+                    if (kmInput != null) {
+                        MZLog.d(this.TAG, "kmInput stream closed.");
+                        kmInput.close();
+                    }
+
+                    if (caBksInput != null) {
+                        caBksInput.close();
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        return sslParams;
+    }
+
+
+    protected MZHttpUtils.SSLParams buildDefaultSSLParam() {
+        MZHttpUtils.SSLParams sslParams = new MZHttpUtils.SSLParams();
         try {
             // Create a trust manager that does not validate certificate chains
             final TrustManager[] trustAllCerts = new TrustManager[]{new X509TrustManager() {
@@ -202,7 +252,8 @@ public abstract class MZRestApi<SERVICE> {
             final SSLContext sslContext = SSLContext.getInstance("SSL");
             sslContext.init(null, trustAllCerts,
                     new java.security.SecureRandom());
-            return sslContext;
+            sslParams.sSLSocketFactory = sslContext.getSocketFactory();
+            return sslParams;
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -210,29 +261,38 @@ public abstract class MZRestApi<SERVICE> {
     }
 
     protected boolean init() {
-        return init(buildDefaultSSLContext());
+        mIsSSL = false;
+        return init(buildDefaultSSLParam());
+    }
+
+    protected boolean init(String clientBksPath, String caPassword, String caAlias,
+                           String trustStoreBksPath, String bkPassword) {
+        mIsSSL = true;
+        return init(buildSSLParam(clientBksPath, caPassword, caAlias, trustStoreBksPath, bkPassword));
     }
 
     /**
      * 初始化 rest service
      *
-     * @param sslContext ssl context
-     * @see com.mz.android.rest.MZRestApi buildDefaultSSLContext function
+     * @param sslParams ssl context
+     * @see com.mz.android.rest.MZRestApi buildDefaultSSLParam function
      */
-    protected boolean init(SSLContext sslContext) {
+    protected boolean init(MZHttpUtils.SSLParams sslParams) {
         if (TextUtils.isEmpty(mBaseUrl)) {
             MZLog.e(TAG, "createService error empty base url");
         } else if (null == mServiceClass) {
             MZLog.e(TAG, "createService error empty service class");
         } else {
             try {
-                OkHttpClient client = getOkHttpClient(sslContext);
-                Retrofit retrofit = new Retrofit.Builder().baseUrl(mBaseUrl)
+                OkHttpClient client = getOkHttpClient(sslParams);
+                Retrofit.Builder builder = new Retrofit.Builder().baseUrl(mBaseUrl)
                         .addCallAdapterFactory(RxJava2CallAdapterFactory.create())//使用RxJava
-                        .addConverterFactory(mConverterFactory)
-                        .client(client)
-                        .build();
-                mService = retrofit.create(mServiceClass);
+                        .client(client);
+
+                if (null != mConverterFactory) {
+                    builder.addConverterFactory(mConverterFactory);
+                }
+                mService = builder.build().create(mServiceClass);
                 return true;
             } catch (Exception e) {
                 e.printStackTrace();
@@ -242,7 +302,9 @@ public abstract class MZRestApi<SERVICE> {
         return false;
     }
 
+
     private final static String CERTIFICATE_STANDARD = "X509";
+
 
     /**
      * 构建双向认证SSLContext
@@ -269,10 +331,8 @@ public abstract class MZRestApi<SERVICE> {
             KeyStore trustStore = KeyStore.getInstance(sslProtocol);
 
             //读取证书
-//            InputStream ksIn = context.getAssets().open(clientBksPath);
-//            InputStream tsIn = context.getAssets().open(clientBksPassword);
-            InputStream ksIn = new FileInputStream(new File(clientBksPath));
-            InputStream tsIn = new FileInputStream(new File(trustStoreBksPath));
+            InputStream ksIn = context.getAssets().open(clientBksPath);
+            InputStream tsIn = context.getAssets().open(clientBksPassword);
             //加载证书
             keyStore.load(ksIn, clientBksPassword.toCharArray());
             trustStore.load(tsIn, trustStoreBksPassword.toCharArray());
@@ -310,12 +370,12 @@ public abstract class MZRestApi<SERVICE> {
      * @param callback            应用层回调
      * @return Subscriber 订阅者
      */
-    protected <T, R> Disposable startRestAsync(final Observable<T> call,
-                                               final Function<T, Publisher<MZRestResult<R>>> checkResultFunction,
-                                               final MZRestICallback<R> callback) {
+    protected <T, R> Disposable doStartRestAsync(final Observable<T> call,
+                                                 final Function<T, Publisher<MZRestResult<R>>> checkResultFunction,
+                                                 final MZRestICallback<R> callback) {
         if (null != call && null != checkResultFunction && null != callback) {
             MZRestObserver<T, R> restObserver = new MZRestObserver<>(mContext, checkResultFunction, callback);
-            return startRestAsync(call, restObserver);
+            return doStartRestAsync(call, restObserver);
         }
 
         MZLog.e(TAG, "param is null,please check");
@@ -330,46 +390,46 @@ public abstract class MZRestApi<SERVICE> {
      * @param callback            带http头的应用层回调
      * @return Subscriber 订阅者
      */
-    protected <T, R> Disposable startRestAsync(final Observable<Response<T>> call,
-                                               final Function<Response<T>, Publisher<MZRestResult<R>>> checkResultFunction,
-                                               final MZRestHeaderICallback<R> callback) {
+    protected <T, R> Disposable doStartRestAsync(final Observable<Response<T>> call,
+                                                 final Function<Response<T>, Publisher<MZRestResult<R>>> checkResultFunction,
+                                                 final MZRestHeaderICallback<R> callback) {
         if (null != call && null != checkResultFunction && null != callback) {
             MZRestHeaderObserver<T, R> restObserver = new MZRestHeaderObserver<>(mContext, checkResultFunction, callback);
-            return startRestAsync(call, restObserver);
+            return doStartRestAsync(call, restObserver);
         }
         MZLog.e(TAG, "param is null,please check");
         return null;
     }
 
-    private <T, R> Disposable startRestAsync(final Observable<T> call,
-                                             MZRestObserverBase<T, R> observer) {
-        return call.subscribeOn(Schedulers.io()).unsubscribeOn(AndroidSchedulers.mainThread())
-                .observeOn(AndroidSchedulers.mainThread()).subscribe(observer.getOnNext(),
-                        observer.getOnError(), observer.getOnComplete());
+    private <T, R> Disposable doStartRestAsync(final Observable<T> call,
+                                               MZRestObserverBase<T, R> observer) {
+        return call.subscribeOn(Schedulers.io())
+                .unsubscribeOn(AndroidSchedulers.mainThread())
+                .observeOn(AndroidSchedulers.mainThread())
+                .retryWhen(getRestRetry())
+                .subscribe(observer.getOnNext(), observer.getOnError(), observer.getOnComplete());
     }
 
     /**
      * 开始批量异步http请求,同时返回结果
      *
-     * @param call1               请求1
-     * @param call2               请求2
+     * @param callList            请求列表
      * @param checkResultFunction 比较返回码的function
      * @param callback            应用层回调
      * @return Subscriber 订阅者
      */
-    protected <T1, T2, R> Disposable startRestBatchAsync(Observable<T1> call1,
-                                                         Observable<T2> call2,
-                                                         final BiFunction<T1, T2, MZRestResult<R>> checkResultFunction,
-                                                         final MZRestICallback<R> callback) {
+    protected <R> Disposable doRestBatchAsync(List<Observable<?>> callList,
+                                              final Function<Object[], MZRestResult<R>> checkResultFunction,
+                                              final MZRestICallback<R> callback) {
         MZRestBatchObserver observer = new MZRestBatchObserver(mContext, callback);
         Disposable disposable = null;
-
-        if (null != call1 && null != call2 && null != checkResultFunction && null != callback) {
-            call1 = call1.subscribeOn(Schedulers.io());
-            call2 = call2.subscribeOn(Schedulers.io());
-            disposable = Observable.zip(call1, call2, checkResultFunction)
-                    .subscribeOn(Schedulers.io())
-                    .observeOn(Schedulers.io())
+        List<Observable<?>> zipCallList = new ArrayList<>();
+        if (null != callList && !callList.isEmpty()) {
+            for (Observable<?> call : callList) {
+                zipCallList.add(call.subscribeOn(Schedulers.io()));
+            }
+            callList.clear();
+            disposable = Observable.zip(zipCallList, checkResultFunction).subscribeOn(Schedulers.io()).observeOn(Schedulers.io())
                     .doOnNext(new Consumer<MZRestResult<R>>() {
                         @Override
                         public void accept(MZRestResult<R> result) throws Exception {
@@ -380,152 +440,24 @@ public abstract class MZRestApi<SERVICE> {
                     })
                     .unsubscribeOn(AndroidSchedulers.mainThread())
                     .observeOn(AndroidSchedulers.mainThread())
+                    .retryWhen(getRestRetry())
                     .subscribe(observer.getOnNext(), observer.getOnError());
         } else {
-            MZLog.e(TAG, "param is null,please check");
-        }
-        return disposable;
-    }
-
-    /**
-     * 开始批量异步http请求,同时返回结果
-     *
-     * @param call1               请求1
-     * @param call2               请求2
-     * @param call3               请求3
-     * @param checkResultFunction 比较返回码的function
-     * @param callback            应用层回调
-     * @return Subscriber 订阅者
-     */
-    protected <T1, T2, T3, R> Disposable startRestBatchAsync(Observable<T1> call1,
-                                                             Observable<T2> call2,
-                                                             Observable<T3> call3,
-                                                             final Function3<T1, T2, T3, MZRestResult<R>> checkResultFunction,
-                                                             final MZRestICallback<R> callback) {
-        MZRestBatchObserver observer = new MZRestBatchObserver(mContext, callback);
-        Disposable disposable = null;
-
-        if (null != call1 && null != call2 && null != call3 && null != checkResultFunction && null != callback) {
-            call1 = call1.subscribeOn(Schedulers.io());
-            call2 = call2.subscribeOn(Schedulers.io());
-            call3 = call3.subscribeOn(Schedulers.io());
-
-            disposable = Observable.zip(call1, call2, call3, checkResultFunction)
-                    .observeOn(Schedulers.io())
-                    .doOnNext(new Consumer<MZRestResult<R>>() {
-                        @Override
-                        public void accept(MZRestResult<R> result) throws Exception {
-                            if (null != result && result.isSuccess()) {
-                                callback.onRestSuccessIO(result.getData());
-                            }
-                        }
-                    })
-                    .unsubscribeOn(AndroidSchedulers.mainThread())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(observer.getOnNext(), observer.getOnError());
-        } else {
-            MZLog.e(TAG, "param is null,please check");
-        }
-        return disposable;
-    }
-
-    /**
-     * 开始批量异步http请求,同时返回结果
-     *
-     * @param call1               请求1
-     * @param call2               请求2
-     * @param call3               请求3
-     * @param call4               请求4
-     * @param checkResultFunction 比较返回码的function
-     * @param callback            应用层回调
-     * @return Subscriber 订阅者
-     */
-    protected <T1, T2, T3, T4, R> Disposable startRestBatchAsync(Observable<T1> call1,
-                                                                 Observable<T2> call2,
-                                                                 Observable<T3> call3,
-                                                                 Observable<T4> call4,
-                                                                 final Function4<T1, T2, T3, T4, MZRestResult<R>> checkResultFunction,
-                                                                 final MZRestICallback<R> callback) {
-        MZRestBatchObserver observer = new MZRestBatchObserver(mContext, callback);
-        Disposable disposable = null;
-
-        if (null != call1 && null != call2 && null != call3 && null != call4 && null != checkResultFunction && null != callback) {
-            call1 = call1.subscribeOn(Schedulers.io());
-            call2 = call2.subscribeOn(Schedulers.io());
-            call3 = call3.subscribeOn(Schedulers.io());
-            call4 = call4.subscribeOn(Schedulers.io());
-
-            disposable = Observable.zip(call1, call2, call3, call4, checkResultFunction)
-                    .observeOn(Schedulers.io())
-                    .doOnNext(new Consumer<MZRestResult<R>>() {
-                        @Override
-                        public void accept(MZRestResult<R> result) throws Exception {
-                            if (null != result && result.isSuccess()) {
-                                callback.onRestSuccessIO(result.getData());
-                            }
-                        }
-                    })
-                    .unsubscribeOn(AndroidSchedulers.mainThread())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(observer.getOnNext(), observer.getOnError());
-        } else {
-            MZLog.e(TAG, "param is null,please check");
-        }
-        return disposable;
-    }
-
-    /**
-     * 开始批量异步http请求,同时返回结果
-     *
-     * @param call1               请求1
-     * @param call2               请求2
-     * @param call3               请求3
-     * @param call4               请求4
-     * @param call5               请求4
-     * @param checkResultFunction 比较返回码的function
-     * @param callback            应用层回调
-     * @return Subscriber 订阅者
-     */
-    protected <T1, T2, T3, T4, T5, R> Disposable startRestBatchAsync(Observable<T1> call1,
-                                                                     Observable<T2> call2,
-                                                                     Observable<T3> call3,
-                                                                     Observable<T4> call4,
-                                                                     Observable<T5> call5,
-                                                                     final Function5<T1, T2, T3, T4, T5, MZRestResult<R>> checkResultFunction,
-                                                                     final MZRestICallback<R> callback) {
-        MZRestBatchObserver observer = new MZRestBatchObserver(mContext, callback);
-        Disposable disposable = null;
-
-        if (null != call1 && null != call2 && null != call3 && null != call4 && null != call5 && null != checkResultFunction && null != callback) {
-            call1 = call1.subscribeOn(Schedulers.io());
-            call2 = call2.subscribeOn(Schedulers.io());
-            call3 = call3.subscribeOn(Schedulers.io());
-            call4 = call4.subscribeOn(Schedulers.io());
-            call5 = call5.subscribeOn(Schedulers.io());
-
-            disposable = Observable.zip(call1, call2, call3, call4, call5, checkResultFunction)
-                    .observeOn(Schedulers.io())
-                    .doOnNext(new Consumer<MZRestResult<R>>() {
-                        @Override
-                        public void accept(MZRestResult<R> result) throws Exception {
-                            if (null != result && result.isSuccess()) {
-                                callback.onRestSuccessIO(result.getData());
-                            }
-                        }
-                    })
-                    .unsubscribeOn(AndroidSchedulers.mainThread())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(observer.getOnNext(), observer.getOnError());
-        } else {
-            MZLog.e(TAG, "param is null,please check");
+            MZLog.e(TAG, "callList is null or empty,please check");
         }
         return disposable;
     }
 
     //比较返回的code
-    protected <R> Publisher<MZRestResult<R>> getResult(int code, int successCode, String message, R data) {
-        return Flowable.just(new MZRestResult<>(code == successCode, code, message, data));
+    protected <R> Publisher<MZRestResult<R>> getResult(String code, String successCode, String message, R data) {
+        return getResult(TextUtils.equals(code, successCode), code, message, data);
     }
+
+    //比较返回的code
+    protected <R> Publisher<MZRestResult<R>> getResult(boolean isSuccess, String code, String message, R data) {
+        return Flowable.just(new MZRestResult<>(isSuccess, code, message, data));
+    }
+
     //***************************get/set**************************//
 
     /**
@@ -632,17 +564,25 @@ public abstract class MZRestApi<SERVICE> {
         }
 
         HttpUrl httpUrl = HttpUrl.parse(url).newBuilder().build();
-        List<Cookie> cookies = mCookieJar.loadForRequest(httpUrl);
-
-        for (int i = 0; i < cookies.size(); i++) {
-            Cookie cookie = cookies.get(i);
-
-            cookieStr += cookie.name() + "=" + cookie.value();
-            if (i != cookies.size() - 1) {
-                cookieStr += "; ";
-            }
-        }
+//        List<Cookie> cookies = mCookieJar.loadForRequest(httpUrl);
+//
+//        for (int i = 0; i < cookies.size(); i++) {
+//            Cookie cookie = cookies.get(i);
+//
+//            cookieStr += cookie.name() + "=" + cookie.value();
+//            if (i != cookies.size() - 1) {
+//                cookieStr += "; ";
+//            }
+//        }
 
         return cookieStr;
+    }
+
+    public void onResponse(okhttp3.Response response) {
+
+    }
+
+    public MZRestRetry getRestRetry() {
+        return new MZRestRetry();
     }
 }

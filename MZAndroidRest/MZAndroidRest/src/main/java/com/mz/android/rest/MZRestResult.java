@@ -9,13 +9,13 @@ public class MZRestResult<R> {
     //服务器返回结果是否成功
     private boolean success;
     //服务器返回码
-    private int code;
+    private String code;
     //服务器返回信息
     private String message;
     //需要传递给调用方的数据对象
     private R data;
 
-    public MZRestResult(boolean success, int code, String message, R data) {
+    public MZRestResult(boolean success, String code, String message, R data) {
         this.success = success;
         this.code = code;
         this.message = message;
@@ -26,7 +26,7 @@ public class MZRestResult<R> {
         return success;
     }
 
-    public int getCode() {
+    public String getCode() {
         return code;
     }
 
