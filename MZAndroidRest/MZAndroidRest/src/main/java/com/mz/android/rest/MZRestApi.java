@@ -116,7 +116,31 @@ public abstract class MZRestApi<SERVICE> {
     protected OkHttpClient getOkHttpClient(MZHttpUtils.SSLParams sslParams) {
         try {
             // Create an ssl socket factory with our all-trusting manager
-            final SSLSocketFactory sslSocketFactory = sslParams.sSLSocketFactory;
+            OkHttpClient.Builder builder = getOkHttpClientBuild();
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+                MZLog.d(TAG, "init ssl default");
+                if (mIsSSL) {
+                    builder.sslSocketFactory(sslParams.sSLSocketFactory, sslParams.trustManager);
+                } else {
+                    builder.sslSocketFactory(sslParams.sSLSocketFactory);
+                }
+            } else {
+                //android 4.4以下
+                MZLog.d(TAG, "init android 4.4 with tls");
+                SSLSocketFactory socketFactory = new MZTls12SocketFactory(sslParams.sSLSocketFactory);
+                builder.sslSocketFactory(socketFactory);
+            }
+            return builder.build();
+        } catch (Exception e) {
+            MZLog.e(TAG, "getUnsafeOkHttpClient error!");
+            throw new RuntimeException(e);
+        }
+    }
+
+    //获取ok http client
+    protected OkHttpClient.Builder getOkHttpClientBuild() {
+        try {
 
             // Define the interceptor, add authentication headers
             Interceptor requestInterceptor = new Interceptor() {
@@ -166,26 +190,11 @@ public abstract class MZRestApi<SERVICE> {
                     .addInterceptor(requestInterceptor)
                     .addInterceptor(loggingInterceptor);
 
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
-                MZLog.d(TAG, "init default");
-                if (mIsSSL) {
-                    builder.sslSocketFactory(sslParams.sSLSocketFactory, sslParams.trustManager);
-                } else {
-                    builder.sslSocketFactory(sslSocketFactory);
-                }
-            } else {
-                //android 4.4以下
-                MZLog.d(TAG, "init android 4.4 with tls");
-                SSLSocketFactory socketFactory = new MZTls12SocketFactory(sslSocketFactory);
-                builder.sslSocketFactory(socketFactory);
-            }
-
             if (mIsCookieEnabled) {
                 MZLog.d(TAG, "cookie is enabled");
                 //builder = builder.cookieJar(mCookieJar);
             }
-            return builder.build();
+            return builder;
         } catch (Exception e) {
             MZLog.e(TAG, "getUnsafeOkHttpClient error!");
             throw new RuntimeException(e);
@@ -193,7 +202,7 @@ public abstract class MZRestApi<SERVICE> {
     }
 
     protected MZHttpUtils.SSLParams buildSSLParam(String clientBksPath, String caPassword, String caAlias,
-                                                String trustStoreBksPath, String bkPassword) {
+                                                  String trustStoreBksPath, String bkPassword) {
         InputStream kmInput = null;
         InputStream caBksInput = null;
         AssetManager assetManager = mContext.getAssets();
@@ -224,6 +233,12 @@ public abstract class MZRestApi<SERVICE> {
         return sslParams;
     }
 
+    protected MZHttpUtils.SSLParams buildSSLParam(String caCrtFile,
+                                                  String clientFile,
+                                                  String keyFile,
+                                                  String password) {
+        return MZHttpUtils.getSslSocketFactory(mContext, caCrtFile, clientFile, keyFile, password);
+    }
 
     protected MZHttpUtils.SSLParams buildDefaultSSLParam() {
         MZHttpUtils.SSLParams sslParams = new MZHttpUtils.SSLParams();
@@ -271,6 +286,14 @@ public abstract class MZRestApi<SERVICE> {
         return init(buildSSLParam(clientBksPath, caPassword, caAlias, trustStoreBksPath, bkPassword));
     }
 
+    protected boolean init(String caCrtFile,
+                           String clientFile,
+                           String keyFile,
+                           String password) {
+        mIsSSL = true;
+        return init(buildSSLParam(caCrtFile, clientFile, keyFile, password));
+    }
+
     /**
      * 初始化 rest service
      *
@@ -300,66 +323,6 @@ public abstract class MZRestApi<SERVICE> {
             }
         }
         return false;
-    }
-
-
-    private final static String CERTIFICATE_STANDARD = "X509";
-
-
-    /**
-     * 构建双向认证SSLContext
-     *
-     * @param context               上下文
-     * @param clientBksPath         客户端bks文件路径
-     * @param clientBksPassword     客户端bks密码
-     * @param trustStoreBksPath     信任机构bks文件路径
-     * @param trustStoreBksPassword 信任机构bks密码
-     * @param sslProtocol           ssl协议类型，例如"BKS"
-     * @param trustManagerProtocol  trust manager协议类型，例如"TLS"
-     * @param certificateAlgorithm  证书算法,例如"X509"
-     * @return SSLContext
-     */
-    public SSLContext getSSLCertifcation(Context context, String clientBksPath, String clientBksPassword,
-                                         String trustStoreBksPath, String trustStoreBksPassword,
-                                         String sslProtocol, String trustManagerProtocol,
-                                         String certificateAlgorithm) {
-        SSLContext sslContext = null;
-        try {
-            // 服务器端需要验证的客户端证书，其实就是客户端的keystore
-            KeyStore keyStore = KeyStore.getInstance(sslProtocol);
-            // 客户端信任的服务器端证书
-            KeyStore trustStore = KeyStore.getInstance(sslProtocol);
-
-            //读取证书
-            InputStream ksIn = context.getAssets().open(clientBksPath);
-            InputStream tsIn = context.getAssets().open(clientBksPassword);
-            //加载证书
-            keyStore.load(ksIn, clientBksPassword.toCharArray());
-            trustStore.load(tsIn, trustStoreBksPassword.toCharArray());
-            ksIn.close();
-            tsIn.close();
-
-            //初始化SSLContext
-            sslContext = SSLContext.getInstance(trustManagerProtocol);
-            TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(certificateAlgorithm);
-            KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(certificateAlgorithm);
-            trustManagerFactory.init(trustStore);
-            keyManagerFactory.init(keyStore, trustStoreBksPath.toCharArray());
-            sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), null);
-        } catch (KeyStoreException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (CertificateException e) {
-            e.printStackTrace();
-        } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
-        } catch (UnrecoverableKeyException e) {
-            e.printStackTrace();
-        } catch (KeyManagementException e) {
-            e.printStackTrace();
-        }
-        return sslContext;
     }
 
     /**

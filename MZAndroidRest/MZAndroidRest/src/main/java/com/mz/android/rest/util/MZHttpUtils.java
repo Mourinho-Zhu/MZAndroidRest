@@ -66,8 +66,8 @@ public class MZHttpUtils {
         }
     }
 
-    public static SSLParams getSslSocketFactory(InputStream caBksFile,String caPassword, String caAlias,
-                                                InputStream bksFile,String bkPassword ) {
+    public static SSLParams getSslSocketFactory(InputStream caBksFile, String caPassword, String caAlias,
+                                                InputStream bksFile, String bkPassword) {
         SSLParams sslParams = new SSLParams();
         try {
             TrustManager[] trustManagers = prepareTrustManager(caBksFile, caPassword, caAlias);
@@ -90,6 +90,13 @@ public class MZHttpUtils {
         } catch (KeyStoreException e) {
             throw new AssertionError(e);
         }
+    }
+
+    public static SSLParams getSslSocketFactory(Context context, String caCrtFile,
+                                                String clientFile,
+                                                String keyFile,
+                                                String password) {
+        return MZHttpSSLVerifier.getSslSocketFactoryUseAssets(context, caCrtFile, clientFile, keyFile, password);
     }
 
     private static TrustManager[] prepareTrustManager(InputStream[] certificates) {

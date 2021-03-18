@@ -32,4 +32,6 @@ dependencies {
     provided 'io.reactivex.rxjava2:rxandroid:2.0.1'
     provided files('libs/simple-xml-2.7.1.jar')
     provided files('libs/logging-interceptor-3.4.1.jar')
+    provided 'org.bouncycastle:bcprov-jdk15on:1.68'
+
 }
