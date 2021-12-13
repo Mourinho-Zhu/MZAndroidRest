@@ -9,34 +9,24 @@ import com.jakewharton.retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory;
 import com.mz.android.rest.callback.MZRestHeaderICallback;
 import com.mz.android.rest.callback.MZRestICallback;
 import com.mz.android.rest.convert.MZRestGsonConverterFactory;
-import com.mz.android.rest.persistentcookiejar.ClearableCookieJar;
-import com.mz.android.rest.persistentcookiejar.PersistentCookieJar;
-import com.mz.android.rest.persistentcookiejar.cache.SetCookieCache;
-import com.mz.android.rest.persistentcookiejar.persistence.SharedPrefsCookiePersistor;
 import com.mz.android.rest.util.MZHttpUtils;
 
 import org.reactivestreams.Publisher;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.security.KeyManagementException;
-import java.security.KeyStore;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
-import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 
 import io.reactivex.Flowable;
@@ -46,7 +36,6 @@ import io.reactivex.disposables.Disposable;
 import io.reactivex.functions.Consumer;
 import io.reactivex.functions.Function;
 import io.reactivex.schedulers.Schedulers;
-import okhttp3.Cookie;
 import okhttp3.HttpUrl;
 import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
@@ -120,7 +109,7 @@ public abstract class MZRestApi<SERVICE> {
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
                 MZLog.d(TAG, "init ssl default");
-                if (mIsSSL) {
+                if (mIsSSL || Build.VERSION.SDK_INT >= 29) {
                     builder.sslSocketFactory(sslParams.sSLSocketFactory, sslParams.trustManager);
                 } else {
                     builder.sslSocketFactory(sslParams.sSLSocketFactory);
@@ -155,6 +144,12 @@ public abstract class MZRestApi<SERVICE> {
                         }
                     }
                     Request newRequest = builder.build();
+                    String modifiedUrl = getModifiedUrl(chain.request());
+                    if(!TextUtils.isEmpty(modifiedUrl)) {
+                        MZLog.d(TAG, "getModifiedUrl --> " + modifiedUrl);
+                        newRequest = builder.url(modifiedUrl).build();
+                    }
+
                     MZLog.d(TAG, "chain.proceed start");
                     okhttp3.Response response = chain.proceed(newRequest);
                     MZLog.d(TAG, "chain.proceed response");
@@ -268,6 +263,7 @@ public abstract class MZRestApi<SERVICE> {
             sslContext.init(null, trustAllCerts,
                     new java.security.SecureRandom());
             sslParams.sSLSocketFactory = sslContext.getSocketFactory();
+            sslParams.trustManager = (X509TrustManager)trustAllCerts[0];
             return sslParams;
         } catch (Exception e) {
             e.printStackTrace();
@@ -491,7 +487,13 @@ public abstract class MZRestApi<SERVICE> {
      *
      * @return 自定义Header map
      */
-    public abstract Map<String, String> getHeaders();
+    public  Map<String, String> getHeaders() {
+        return new HashMap();
+    }
+
+    public String getModifiedUrl(Request request) {
+        return null;
+    }
 
     /**
      * 设置 log最大长度
